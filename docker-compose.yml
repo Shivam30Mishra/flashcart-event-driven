@@ -1,0 +1,228 @@
+services:
+  postgres:
+    image: postgres:15
+    container_name: postgres
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: flashcart
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d flashcart"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7
+    container_name: redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:latest
+    container_name: zookeeper
+    restart: unless-stopped
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 2181"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: kafka
+    restart: unless-stopped
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,PLAINTEXT_INTERNAL://0.0.0.0:29092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092,PLAINTEXT_INTERNAL://kafka:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_INTERNAL:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT_INTERNAL
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-broker-api-versions --bootstrap-server localhost:9092 >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+
+  order-service:
+    restart: unless-stopped
+    build:
+      context: .
+      args:
+        SERVICE_PATH: services/order-service
+    container_name: order-service
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    environment:
+      SERVICE_NAME: order-service
+      PORT: 3000
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: flashcart
+      KAFKA_BROKERS: kafka:29092
+    ports:
+      - "3000:3000"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/health >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  inventory-service:
+    restart: unless-stopped
+    build:
+      context: .
+      args:
+        SERVICE_PATH: services/inventory-service
+    container_name: inventory-service
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    environment:
+      SERVICE_NAME: inventory-service
+      HEALTH_PORT: 4000
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: flashcart
+      KAFKA_BROKERS: kafka:29092
+    ports:
+      - "4000:4000"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:4000/health >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  payment-service:
+    restart: unless-stopped
+    build:
+      context: .
+      args:
+        SERVICE_PATH: services/payment-service
+    container_name: payment-service
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    environment:
+      SERVICE_NAME: payment-service
+      HEALTH_PORT: 4001
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: flashcart
+      KAFKA_BROKERS: kafka:29092
+    ports:
+      - "4001:4001"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:4001/health >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  outbox-worker:
+    restart: unless-stopped
+    build:
+      context: .
+      args:
+        SERVICE_PATH: services/outbox-worker
+    container_name: outbox-worker
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    environment:
+      SERVICE_NAME: outbox-worker
+      HEALTH_PORT: 4002
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: flashcart
+      KAFKA_BROKERS: kafka:29092
+    ports:
+      - "4002:4002"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:4002/health >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  dlq-replay-worker:
+    restart: unless-stopped
+    build:
+      context: .
+      args:
+        SERVICE_PATH: services/dlq-replay-worker
+    container_name: dlq-replay-worker
+    depends_on:
+      kafka:
+        condition: service_healthy
+    environment:
+      SERVICE_NAME: dlq-replay-worker
+      HEALTH_PORT: 4003
+      KAFKA_BROKERS: kafka:29092
+    ports:
+      - "4003:4003"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:4003/health >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  order-timeout-worker:
+    restart: unless-stopped
+    build:
+      context: .
+      args:
+        SERVICE_PATH: services/order-timeout-worker
+    container_name: order-timeout-worker
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      SERVICE_NAME: order-timeout-worker
+      HEALTH_PORT: 4004
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: flashcart
+    ports:
+      - "4004:4004"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:4004/health >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres-data:
