@@ -3,7 +3,7 @@
 Flashcart is a production-style distributed checkout backend built with Node.js, Kafka, PostgreSQL, Docker, and event-driven microservices.
 It demonstrates a real checkout Saga with inventory reservation, payment processing, transactional outbox publishing, retries + DLQ replay, idempotent consumers, compensation, health checks, structured logs, and metrics.
 
-It also includes a friendly dashboard so the system can be assessed like a live web project (create an order, observe state transitions, verify health, and inspect stats) without reading the entire codebase first.
+It also includes a friendly dashboard so the system can be assessed like a live web project (create an order, observe state transitions, verify health, and inspect stats) without reading the entire codebase first. 
 
 Dashboard (local): `http://localhost:3000/`
 
