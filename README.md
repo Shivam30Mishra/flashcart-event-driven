@@ -27,7 +27,6 @@ Dashboard (local): `http://localhost:3000/`
 - Deploy
 - Contributing
 - Roadmap
-- Resume Notes
 
 ## Quickstart (Local)
 
@@ -182,8 +181,6 @@ The script prints JSON like:
   }
 }
 ```
-
-Note: Always use your own measured output. Do not copy sample numbers unless you actually ran that exact test.
 
 ## Troubleshooting
 
